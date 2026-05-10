@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const bcrypt = require("bcryptjs");
 const pool = require("../config/database");
 const { verifyToken } = require("../middleware/auth");
@@ -7,10 +7,26 @@ const router = express.Router();
 router.get("/", verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT company_name, logo, phone, email, city, state, address FROM users WHERE id = $1",
+      "SELECT company_name, logo, phone, email, city, state, address, plan, plan_expires_at, suspended, created_at FROM users WHERE id = $1",
       [req.userId]
     );
-    res.json(result.rows[0] || {});
+    const row = result.rows[0] || {};
+    // Retorna dados da empresa + dados do plano para o frontend verificar
+    res.json({
+      company_name: row.company_name,
+      logo: row.logo,
+      phone: row.phone,
+      email: row.email,
+      city: row.city,
+      state: row.state,
+      address: row.address,
+      user: {
+        plan: row.plan,
+        plan_expires_at: row.plan_expires_at,
+        suspended: row.suspended,
+        created_at: row.created_at
+      }
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
