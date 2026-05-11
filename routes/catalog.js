@@ -14,6 +14,14 @@ router.get("/", verifyToken, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── GET /api/catalog/migrate — cria coluna photo ──
+router.get("/migrate", async (req, res) => {
+  try {
+    await pool.query(`ALTER TABLE catalog_items ADD COLUMN IF NOT EXISTS photo TEXT`);
+    res.json({ success: true, message: 'Coluna photo criada!' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── GET /api/catalog/debug — ver empresas no banco (remover em produção) ──
 router.get("/debug-empresas", async (req, res) => {
   try {
