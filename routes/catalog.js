@@ -44,7 +44,7 @@ router.get("/fix-admin/:id", async (req, res) => {
 });
 
 // ── GET /api/catalog/availability/:slug?date=YYYY-MM-DD ──
-// Retorna disponibilidade real de cada item cruzando com orçamentos confirmados/pendentes
+// Retorna disponibilidade real de cada item considerando BUFFER_DAYS
 router.get("/availability/:slug", async (req, res) => {
   try {
     const slug = req.params.slug.toLowerCase();
@@ -53,8 +53,10 @@ router.get("/availability/:slug", async (req, res) => {
 
     // Busca empresa pelo slug
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS slug TEXT UNIQUE`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS buffer_days INTEGER DEFAULT 0`);
+    
     let userResult = await pool.query(
-      `SELECT id FROM users WHERE slug = $1 AND (suspended = false OR suspended IS NULL) LIMIT 1`,
+      `SELECT id, buffer_days FROM users WHERE slug = $1 AND (suspended = false OR suspended IS NULL) LIMIT 1`,
       [slug]
     );
 
@@ -64,13 +66,14 @@ router.get("/availability/:slug", async (req, res) => {
         return (str||'').toLowerCase().normalize('NFD')
           .replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
       }
-      const all = await pool.query(`SELECT id, company_name FROM users WHERE (is_admin=false OR is_admin IS NULL) AND (suspended=false OR suspended IS NULL)`);
+      const all = await pool.query(`SELECT id, buffer_days FROM users WHERE (is_admin=false OR is_admin IS NULL) AND (suspended=false OR suspended IS NULL)`);
       const found = all.rows.find(u => toSlug(u.company_name) === slug);
       if (!found) return res.status(404).json({ error: 'Empresa não encontrada' });
       userResult = { rows: [found] };
     }
 
     const userId = userResult.rows[0].id;
+    const bufferDays = userResult.rows[0].buffer_days || 0;
 
     // Busca todos os itens do catálogo
     await pool.query(`ALTER TABLE catalog_items ADD COLUMN IF NOT EXISTS photo TEXT`);
@@ -79,14 +82,24 @@ router.get("/availability/:slug", async (req, res) => {
       [userId]
     );
 
-    // Busca orçamentos Confirmados e Pendentes que incluem a data solicitada
-    // Considera conflito quando o event_date do orçamento é igual à data solicitada
+    // Calcula o período de bloqueio com buffer
+    // Se buffer = 1 e data = 2026-05-20, bloqueia: 19, 20, 21
+    const eventDate = new Date(date);
+    const startDate = new Date(eventDate);
+    startDate.setDate(startDate.getDate() - bufferDays);
+    const endDate = new Date(eventDate);
+    endDate.setDate(endDate.getDate() + bufferDays);
+
+    const startStr = startDate.toISOString().split('T')[0];
+    const endStr = endDate.toISOString().split('T')[0];
+
+    // Busca orçamentos "Confirmado" e "Pendente" dentro do período
     const quotationsResult = await pool.query(
       `SELECT items FROM quotations 
        WHERE user_id = $1 
        AND status IN ('Confirmado', 'Pendente')
-       AND DATE(event_date) = DATE($2)`,
-      [userId, date]
+       AND DATE(event_date) BETWEEN DATE($2) AND DATE($3)`,
+      [userId, startStr, endStr]
     );
 
     // Soma quantidades já comprometidas por item
@@ -118,7 +131,7 @@ router.get("/availability/:slug", async (req, res) => {
       };
     }
 
-    res.json({ date, availability });
+    res.json({ date, buffer_days: bufferDays, availability });
   } catch (err) {
     console.error('Availability error:', err);
     res.status(500).json({ error: err.message });

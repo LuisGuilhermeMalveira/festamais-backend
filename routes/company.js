@@ -74,5 +74,27 @@ router.put("/password", verifyToken, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-module.exports = router;
+// ── GET /api/company/buffer — obter buffer_days ──
+router.get("/buffer", verifyToken, async (req, res) => {
+  try {
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS buffer_days INTEGER DEFAULT 0`);
+    const result = await pool.query("SELECT buffer_days FROM users WHERE id = $1", [req.userId]);
+    if (!result.rows.length) return res.status(404).json({ error: "Usuário não encontrado" });
+    res.json({ buffer_days: result.rows[0].buffer_days || 0 });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
+// ── PUT /api/company/buffer — salvar buffer_days ──
+router.put("/buffer", verifyToken, async (req, res) => {
+  try {
+    const buf = parseInt(req.body.buffer_days);
+    if (isNaN(buf) || buf < 0 || buf > 2) return res.status(400).json({ error: "buffer_days deve ser entre 0 e 2" });
+    
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS buffer_days INTEGER DEFAULT 0`);
+    const result = await pool.query("UPDATE users SET buffer_days = $1 WHERE id = $2 RETURNING buffer_days", [buf, req.userId]);
+    if (!result.rows.length) return res.status(404).json({ error: "Usuário não encontrado" });
+    res.json({ success: true, buffer_days: result.rows[0].buffer_days });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+module.exports = router;
