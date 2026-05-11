@@ -43,7 +43,89 @@ router.get("/fix-admin/:id", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── GET /api/catalog/public/:slug — catálogo público por slug fixo ──
+// ── GET /api/catalog/availability/:slug?date=YYYY-MM-DD ──
+// Retorna disponibilidade real de cada item cruzando com orçamentos confirmados/pendentes
+router.get("/availability/:slug", async (req, res) => {
+  try {
+    const slug = req.params.slug.toLowerCase();
+    const date = req.query.date; // YYYY-MM-DD
+    if (!date) return res.status(400).json({ error: 'Data obrigatória' });
+
+    // Busca empresa pelo slug
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS slug TEXT UNIQUE`);
+    let userResult = await pool.query(
+      `SELECT id FROM users WHERE slug = $1 AND (suspended = false OR suspended IS NULL) LIMIT 1`,
+      [slug]
+    );
+
+    // Fallback por nome
+    if (!userResult.rows.length) {
+      function toSlug(str) {
+        return (str||'').toLowerCase().normalize('NFD')
+          .replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+      }
+      const all = await pool.query(`SELECT id, company_name FROM users WHERE (is_admin=false OR is_admin IS NULL) AND (suspended=false OR suspended IS NULL)`);
+      const found = all.rows.find(u => toSlug(u.company_name) === slug);
+      if (!found) return res.status(404).json({ error: 'Empresa não encontrada' });
+      userResult = { rows: [found] };
+    }
+
+    const userId = userResult.rows[0].id;
+
+    // Busca todos os itens do catálogo
+    await pool.query(`ALTER TABLE catalog_items ADD COLUMN IF NOT EXISTS photo TEXT`);
+    const itemsResult = await pool.query(
+      `SELECT id, name, stock_total FROM catalog_items WHERE user_id = $1`,
+      [userId]
+    );
+
+    // Busca orçamentos Confirmados e Pendentes que incluem a data solicitada
+    // Considera conflito quando o event_date do orçamento é igual à data solicitada
+    const quotationsResult = await pool.query(
+      `SELECT items FROM quotations 
+       WHERE user_id = $1 
+       AND status IN ('Confirmado', 'Pendente')
+       AND DATE(event_date) = DATE($2)`,
+      [userId, date]
+    );
+
+    // Soma quantidades já comprometidas por item
+    const comprometido = {};
+    for (const q of quotationsResult.rows) {
+      let itens = q.items;
+      if (typeof itens === 'string') {
+        try { itens = JSON.parse(itens); } catch(e) { itens = []; }
+      }
+      if (!Array.isArray(itens)) itens = [];
+      for (const item of itens) {
+        const itemId = item.id || item.catalogId;
+        const qty = parseInt(item.qty || item.quantity || 1);
+        if (itemId) {
+          comprometido[itemId] = (comprometido[itemId] || 0) + qty;
+        }
+      }
+    }
+
+    // Calcula disponível real para cada item
+    const availability = {};
+    for (const item of itemsResult.rows) {
+      const estoque = parseInt(item.stock_total) || 0;
+      const ocupado = comprometido[item.id] || 0;
+      availability[item.id] = {
+        stock_total: estoque,
+        comprometido: ocupado,
+        disponivel: Math.max(0, estoque - ocupado)
+      };
+    }
+
+    res.json({ date, availability });
+  } catch (err) {
+    console.error('Availability error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/catalog/public/:slug ──
 router.get("/public/:slug", async (req, res) => {
   try {
     const slug = req.params.slug.toLowerCase();
