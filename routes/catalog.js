@@ -43,55 +43,60 @@ router.get("/fix-admin/:id", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── GET /api/catalog/public/:slug — catálogo público por slug da empresa ──
+// ── GET /api/catalog/public/:slug — catálogo público por slug fixo ──
 router.get("/public/:slug", async (req, res) => {
   try {
     const slug = req.params.slug.toLowerCase();
 
-    // Busca todos os usuários e faz match por slug no Node
+    // Garante colunas existem
+    await pool.query(`ALTER TABLE catalog_items ADD COLUMN IF NOT EXISTS photo TEXT`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS slug TEXT UNIQUE`);
+
+    // Busca por slug fixo
     const userResult = await pool.query(
-      `SELECT id, company_name, phone, email, city, state, logo
+      `SELECT id, company_name, phone, email, city, state, logo, slug
        FROM users
-       WHERE (is_admin = false OR is_admin IS NULL)
-       AND (suspended = false OR suspended IS NULL)`
+       WHERE slug = $1
+       AND (suspended = false OR suspended IS NULL)
+       LIMIT 1`,
+      [slug]
     );
 
-    // Normaliza o nome para slug e compara
-    function toSlug(str) {
-      return (str || '')
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '');
+    if (!userResult.rows.length) {
+      // Fallback: tenta normalizar company_name (compatibilidade)
+      const allUsers = await pool.query(
+        `SELECT id, company_name, phone, email, city, state, logo, slug
+         FROM users
+         WHERE (is_admin = false OR is_admin IS NULL)
+         AND (suspended = false OR suspended IS NULL)`
+      );
+      function toSlug(str) {
+        return (str || '').toLowerCase().normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      }
+      const company = allUsers.rows.find(u => toSlug(u.company_name) === slug);
+      if (!company) return res.status(404).json({ error: "Empresa não encontrada" });
+
+      const items = await pool.query(
+        `SELECT id, name, category, price_per_day, stock_total, unit, photo
+         FROM catalog_items WHERE user_id = $1 ORDER BY category, name`,
+        [company.id]
+      );
+      return res.json({
+        company: { name: company.company_name, phone: company.phone, email: company.email, city: company.city, state: company.state, logo: company.logo, slug: company.slug },
+        items: items.rows
+      });
     }
 
-    const company = userResult.rows.find(function(u) {
-      return toSlug(u.company_name) === slug;
-    });
-
-    if (!company) return res.status(404).json({ error: "Empresa não encontrada" });
-
-    // Garante coluna photo existe
-    await pool.query(`ALTER TABLE catalog_items ADD COLUMN IF NOT EXISTS photo TEXT`);
-
+    const company = userResult.rows[0];
     const items = await pool.query(
       `SELECT id, name, category, price_per_day, stock_total, unit, photo
-       FROM catalog_items
-       WHERE user_id = $1
-       ORDER BY category, name`,
+       FROM catalog_items WHERE user_id = $1 ORDER BY category, name`,
       [company.id]
     );
 
     res.json({
-      company: {
-        name: company.company_name,
-        phone: company.phone,
-        email: company.email,
-        city: company.city,
-        state: company.state,
-        logo: company.logo
-      },
+      company: { name: company.company_name, phone: company.phone, email: company.email, city: company.city, state: company.state, logo: company.logo, slug: company.slug },
       items: items.rows
     });
   } catch (err) { res.status(500).json({ error: err.message }); }

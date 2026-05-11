@@ -7,11 +7,10 @@ const router = express.Router();
 router.get("/", verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT company_name, logo, phone, email, city, state, address, plan, plan_expires_at, suspended, created_at FROM users WHERE id = $1",
+      "SELECT company_name, logo, phone, email, city, state, address, plan, plan_expires_at, suspended, created_at, slug FROM users WHERE id = $1",
       [req.userId]
     );
     const row = result.rows[0] || {};
-    // Retorna dados da empresa + dados do plano para o frontend verificar
     res.json({
       company_name: row.company_name,
       logo: row.logo,
@@ -20,6 +19,7 @@ router.get("/", verifyToken, async (req, res) => {
       city: row.city,
       state: row.state,
       address: row.address,
+      slug: row.slug,
       user: {
         plan: row.plan,
         plan_expires_at: row.plan_expires_at,
@@ -34,10 +34,29 @@ router.put("/", verifyToken, async (req, res) => {
   try {
     const { company_name, logo, phone, email, city, state, address } = req.body;
     const result = await pool.query(
-      "UPDATE users SET company_name=$1, logo=$2, phone=$3, email=$4, city=$5, state=$6, address=$7 WHERE id=$8 RETURNING company_name, logo, phone, email, city, state, address",
+      "UPDATE users SET company_name=$1, logo=$2, phone=$3, email=$4, city=$5, state=$6, address=$7 WHERE id=$8 RETURNING company_name, logo, phone, email, city, state, address, slug",
       [company_name, logo, phone, email, city, state, address, req.userId]
     );
     res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── PUT /company/slug — atualizar slug ──
+router.put("/slug", verifyToken, async (req, res) => {
+  try {
+    const { slug } = req.body;
+    if (!slug) return res.status(400).json({ error: 'Slug obrigatório' });
+
+    // Valida formato
+    const slugLimpo = slug.toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/^-|-$/g, '');
+    if (slugLimpo.length < 3) return res.status(400).json({ error: 'Slug muito curto (mínimo 3 caracteres)' });
+
+    // Verifica se já existe
+    const existe = await pool.query('SELECT id FROM users WHERE slug = $1 AND id != $2', [slugLimpo, req.userId]);
+    if (existe.rows.length) return res.status(400).json({ error: 'Este link já está em uso. Escolha outro.' });
+
+    await pool.query('UPDATE users SET slug = $1 WHERE id = $2', [slugLimpo, req.userId]);
+    res.json({ success: true, slug: slugLimpo });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -56,3 +75,4 @@ router.put("/password", verifyToken, async (req, res) => {
 });
 
 module.exports = router;
+
