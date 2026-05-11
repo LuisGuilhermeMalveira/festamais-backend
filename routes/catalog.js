@@ -139,6 +139,7 @@ router.get("/availability/:slug", async (req, res) => {
 });
 
 // ── GET /api/catalog/public/:slug ──
+// AGORA RETORNA DISPONIBILIDADE REAL (não apenas stock_total)
 router.get("/public/:slug", async (req, res) => {
   try {
     const slug = req.params.slug.toLowerCase();
@@ -146,10 +147,11 @@ router.get("/public/:slug", async (req, res) => {
     // Garante colunas existem
     await pool.query(`ALTER TABLE catalog_items ADD COLUMN IF NOT EXISTS photo TEXT`);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS slug TEXT UNIQUE`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS buffer_days INTEGER DEFAULT 0`);
 
     // Busca por slug fixo
-    const userResult = await pool.query(
-      `SELECT id, company_name, phone, email, city, state, logo, slug
+    let userResult = await pool.query(
+      `SELECT id, company_name, phone, email, city, state, logo, slug, buffer_days
        FROM users
        WHERE slug = $1
        AND (suspended = false OR suspended IS NULL)
@@ -160,7 +162,7 @@ router.get("/public/:slug", async (req, res) => {
     if (!userResult.rows.length) {
       // Fallback: tenta normalizar company_name (compatibilidade)
       const allUsers = await pool.query(
-        `SELECT id, company_name, phone, email, city, state, logo, slug
+        `SELECT id, company_name, phone, email, city, state, logo, slug, buffer_days
          FROM users
          WHERE (is_admin = false OR is_admin IS NULL)
          AND (suspended = false OR suspended IS NULL)`
@@ -171,30 +173,74 @@ router.get("/public/:slug", async (req, res) => {
       }
       const company = allUsers.rows.find(u => toSlug(u.company_name) === slug);
       if (!company) return res.status(404).json({ error: "Empresa não encontrada" });
-
-      const items = await pool.query(
-        `SELECT id, name, category, price_per_day, stock_total, unit, photo
-         FROM catalog_items WHERE user_id = $1 ORDER BY category, name`,
-        [company.id]
-      );
-      return res.json({
-        company: { name: company.company_name, phone: company.phone, email: company.email, city: company.city, state: company.state, logo: company.logo, slug: company.slug },
-        items: items.rows
-      });
+      userResult = { rows: [company] };
     }
 
     const company = userResult.rows[0];
-    const items = await pool.query(
+    const userId = company.id;
+
+    // Busca itens do catálogo
+    const itemsResult = await pool.query(
       `SELECT id, name, category, price_per_day, stock_total, unit, photo
        FROM catalog_items WHERE user_id = $1 ORDER BY category, name`,
-      [company.id]
+      [userId]
     );
 
-    res.json({
-      company: { name: company.company_name, phone: company.phone, email: company.email, city: company.city, state: company.state, logo: company.logo, slug: company.slug },
-      items: items.rows
+    // Busca TODOS os orçamentos "Confirmado" e "Pendente" (sem filtro de data)
+    // pra retornar a disponibilidade total de cada item
+    const quotationsResult = await pool.query(
+      `SELECT items FROM quotations 
+       WHERE user_id = $1 
+       AND status IN ('Confirmado', 'Pendente')`,
+      [userId]
+    );
+
+    // Soma quantidades comprometidas por item
+    const comprometido = {};
+    for (const q of quotationsResult.rows) {
+      let itens = q.items;
+      if (typeof itens === 'string') {
+        try { itens = JSON.parse(itens); } catch(e) { itens = []; }
+      }
+      if (!Array.isArray(itens)) itens = [];
+      for (const item of itens) {
+        const itemId = item.id || item.catalogId;
+        const qty = parseInt(item.qty || item.quantity || 1);
+        if (itemId) {
+          comprometido[itemId] = (comprometido[itemId] || 0) + qty;
+        }
+      }
+    }
+
+    // Enriqueça itens com disponibilidade real
+    const itemsEnriched = itemsResult.rows.map(item => {
+      const estoque = parseInt(item.stock_total) || 0;
+      const ocupado = comprometido[item.id] || 0;
+      return {
+        ...item,
+        stock_total: estoque,
+        comprometido: ocupado,
+        disponivel: Math.max(0, estoque - ocupado)
+      };
     });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+
+    res.json({
+      company: { 
+        name: company.company_name, 
+        phone: company.phone, 
+        email: company.email, 
+        city: company.city, 
+        state: company.state, 
+        logo: company.logo, 
+        slug: company.slug,
+        buffer_days: company.buffer_days || 0
+      },
+      items: itemsEnriched
+    });
+  } catch (err) { 
+    console.error('Public catalog error:', err);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
 // ── POST /api/catalog — criar item ──
