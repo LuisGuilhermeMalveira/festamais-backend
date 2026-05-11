@@ -14,6 +14,16 @@ router.get("/", verifyToken, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── GET /api/catalog/debug — ver empresas no banco (remover em produção) ──
+router.get("/debug-empresas", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, company_name, is_admin, suspended FROM users ORDER BY id`
+    );
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── GET /api/catalog/public/:slug — catálogo público por slug da empresa ──
 router.get("/public/:slug", async (req, res) => {
   try {
