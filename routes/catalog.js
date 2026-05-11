@@ -64,6 +64,9 @@ router.get("/public/:slug", async (req, res) => {
 
     if (!company) return res.status(404).json({ error: "Empresa não encontrada" });
 
+    // Garante coluna photo existe
+    await pool.query(`ALTER TABLE catalog_items ADD COLUMN IF NOT EXISTS photo TEXT`);
+
     const items = await pool.query(
       `SELECT id, name, category, price_per_day, stock_total, unit, photo
        FROM catalog_items
