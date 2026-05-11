@@ -44,7 +44,7 @@ router.get("/fix-admin/:id", async (req, res) => {
 });
 
 // ── GET /api/catalog/availability/:slug?date=YYYY-MM-DD ──
-// Retorna disponibilidade real de cada item considerando BUFFER_DAYS
+// Retorna DISPONIBILIDADE REAL de cada item considerando BUFFER_DAYS e DATA
 router.get("/availability/:slug", async (req, res) => {
   try {
     const slug = req.params.slug.toLowerCase();
@@ -139,7 +139,8 @@ router.get("/availability/:slug", async (req, res) => {
 });
 
 // ── GET /api/catalog/public/:slug ──
-// AGORA RETORNA DISPONIBILIDADE REAL (não apenas stock_total)
+// Retorna APENAS stock_total (sem considerar orçamentos)
+// Quando cliente seleciona data, a rota /availability/:slug faz o cálculo real
 router.get("/public/:slug", async (req, res) => {
   try {
     const slug = req.params.slug.toLowerCase();
@@ -177,52 +178,20 @@ router.get("/public/:slug", async (req, res) => {
     }
 
     const company = userResult.rows[0];
-    const userId = company.id;
 
     // Busca itens do catálogo
     const itemsResult = await pool.query(
       `SELECT id, name, category, price_per_day, stock_total, unit, photo
        FROM catalog_items WHERE user_id = $1 ORDER BY category, name`,
-      [userId]
+      [company.id]
     );
 
-    // Busca TODOS os orçamentos "Confirmado" e "Pendente" (sem filtro de data)
-    // pra retornar a disponibilidade total de cada item
-    const quotationsResult = await pool.query(
-      `SELECT items FROM quotations 
-       WHERE user_id = $1 
-       AND status IN ('Confirmado', 'Pendente')`,
-      [userId]
-    );
-
-    // Soma quantidades comprometidas por item
-    const comprometido = {};
-    for (const q of quotationsResult.rows) {
-      let itens = q.items;
-      if (typeof itens === 'string') {
-        try { itens = JSON.parse(itens); } catch(e) { itens = []; }
-      }
-      if (!Array.isArray(itens)) itens = [];
-      for (const item of itens) {
-        const itemId = item.id || item.catalogId;
-        const qty = parseInt(item.qty || item.quantity || 1);
-        if (itemId) {
-          comprometido[itemId] = (comprometido[itemId] || 0) + qty;
-        }
-      }
-    }
-
-    // Enriqueça itens com disponibilidade real
-    const itemsEnriched = itemsResult.rows.map(item => {
-      const estoque = parseInt(item.stock_total) || 0;
-      const ocupado = comprometido[item.id] || 0;
-      return {
-        ...item,
-        stock_total: estoque,
-        comprometido: ocupado,
-        disponivel: Math.max(0, estoque - ocupado)
-      };
-    });
+    // No catálogo público SEM data, retorna apenas o stock_total
+    // Quando cliente seleciona data, o frontend chama /availability/:slug pra disponibilidade real
+    const itemsEnriched = itemsResult.rows.map(item => ({
+      ...item,
+      stock_total: parseInt(item.stock_total) || 0
+    }));
 
     res.json({
       company: { 
