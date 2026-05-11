@@ -17,19 +17,32 @@ router.get("/", verifyToken, async (req, res) => {
 // ── GET /api/catalog/public/:slug — catálogo público por slug da empresa ──
 router.get("/public/:slug", async (req, res) => {
   try {
-    // Busca usuário pelo slug (company_name normalizado)
+    const slug = req.params.slug.toLowerCase();
+
+    // Busca todos os usuários e faz match por slug no Node
     const userResult = await pool.query(
       `SELECT id, company_name, phone, email, city, state, logo
        FROM users
-       WHERE LOWER(REGEXP_REPLACE(company_name, '[^a-zA-Z0-9]', '-', 'g')) = LOWER($1)
-       AND (is_admin = false OR is_admin IS NULL)
-       AND (suspended = false OR suspended IS NULL)
-       LIMIT 1`,
-      [req.params.slug]
+       WHERE (is_admin = false OR is_admin IS NULL)
+       AND (suspended = false OR suspended IS NULL)`
     );
-    if (!userResult.rows.length) return res.status(404).json({ error: "Empresa não encontrada" });
 
-    const company = userResult.rows[0];
+    // Normaliza o nome para slug e compara
+    function toSlug(str) {
+      return (str || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+    }
+
+    const company = userResult.rows.find(function(u) {
+      return toSlug(u.company_name) === slug;
+    });
+
+    if (!company) return res.status(404).json({ error: "Empresa não encontrada" });
+
     const items = await pool.query(
       `SELECT id, name, category, price_per_day, stock_total, unit, photo
        FROM catalog_items
