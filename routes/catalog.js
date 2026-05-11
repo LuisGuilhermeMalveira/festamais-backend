@@ -24,6 +24,17 @@ router.get("/debug-empresas", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── GET /api/catalog/fix-admin/:id — remove is_admin de uma conta ──
+router.get("/fix-admin/:id", async (req, res) => {
+  try {
+    await pool.query(
+      `UPDATE users SET is_admin = false WHERE id = $1`,
+      [req.params.id]
+    );
+    res.json({ success: true, message: 'is_admin removido do id ' + req.params.id });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── GET /api/catalog/public/:slug — catálogo público por slug da empresa ──
 router.get("/public/:slug", async (req, res) => {
   try {
