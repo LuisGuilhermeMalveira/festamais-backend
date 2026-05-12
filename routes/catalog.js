@@ -59,20 +59,19 @@ router.delete("/:id", verifyToken, async (req, res) => {
 // ===== ROTAS PÚBLICAS (sem autenticação) =====
 
 // GET - Disponibilidade por data para o catálogo público
-// Chamada: GET /api/catalog/availability/:slug?date=2024-06-15
-router.get("/availability/:slug", async (req, res) => {
+router.get("/availability/:user_id", async (req, res) => {
   try {
-    const { slug } = req.params;
-    const { date } = req.query; // formato: YYYY-MM-DD
+    const { user_id } = req.params;
+    const { date } = req.query;
 
     if (!date) {
       return res.status(400).json({ error: "Data é obrigatória" });
     }
 
-    // 1. Buscar empresa pelo slug
+    // 1. Buscar empresa pelo user_id
     const companyResult = await pool.query(
-      "SELECT id, buffer_days FROM users WHERE slug = $1",
-      [slug]
+      "SELECT id, buffer_days FROM users WHERE id = $1",
+      [user_id]
     );
 
     if (!companyResult.rows[0]) {
@@ -80,31 +79,25 @@ router.get("/availability/:slug", async (req, res) => {
     }
 
     const company = companyResult.rows[0];
-    const companyId = company.id;
     const bufferDays = company.buffer_days || 0;
 
     // 2. Buscar todos os itens da empresa
     const itemsResult = await pool.query(
-      "SELECT id, nome, stock_total, blocked_dates FROM catalog_items WHERE user_id = $1",
-      [companyId]
+      "SELECT id, name, stock_total FROM catalog_items WHERE user_id = $1",
+      [user_id]
     );
 
     // 3. Calcular disponibilidade para cada item na data solicitada
     const availability = {};
 
     itemsResult.rows.forEach(item => {
-      const blockedDates = item.blocked_dates || {};
-      const blockedQty = blockedDates[date] || 0;
-      const disponivel = Math.max(0, item.stock_total - blockedQty);
-
+      // Placeholder: disponível = stock_total (sem bloqueios implementados ainda)
       availability[item.id] = {
         stock_total: item.stock_total,
-        comprometido: blockedQty,
-        disponivel: disponivel
+        disponivel: item.stock_total
       };
     });
 
-    // 4. Retornar resultado
     res.json({
       date: date,
       buffer_days: bufferDays,
@@ -117,15 +110,15 @@ router.get("/availability/:slug", async (req, res) => {
   }
 });
 
-// GET - Catálogo público por slug da empresa (rota /public/:slug)
-router.get("/public/:slug", async (req, res) => {
+// GET - Catálogo público por user_id (IMUTÁVEL - nunca muda mesmo se empresa mudar nome)
+router.get("/public/:user_id", async (req, res) => {
   try {
-    const { slug } = req.params;
+    const { user_id } = req.params;
 
-    // Buscar empresa pelo slug
+    // Buscar empresa pelo user_id (não pelo slug - mais seguro!)
     const companyResult = await pool.query(
-      "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE slug = $1",
-      [slug]
+      "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE id = $1",
+      [user_id]
     );
 
     if (!companyResult.rows[0]) {
@@ -134,10 +127,10 @@ router.get("/public/:slug", async (req, res) => {
 
     const company = companyResult.rows[0];
 
-    // Buscar itens da empresa - NOMES EM INGLÊS
+    // Buscar itens da empresa
     const itemsResult = await pool.query(
       "SELECT id, name, category, price_per_day, unit, stock_total, photo FROM catalog_items WHERE user_id = $1 ORDER BY category, name",
-      [company.id]
+      [user_id]
     );
 
     res.json({
@@ -149,15 +142,15 @@ router.get("/public/:slug", async (req, res) => {
   }
 });
 
-// GET - Catálogo público por slug (rota genérica /:slug - APÓS /public/:slug e /availability/:slug)
-router.get("/:slug", async (req, res) => {
+// GET - Catálogo público por user_id (rota genérica - NUNCA MUDA!)
+router.get("/:user_id", async (req, res) => {
   try {
-    const { slug } = req.params;
+    const { user_id } = req.params;
 
-    // Buscar empresa pelo slug
+    // Buscar empresa pelo user_id (imutável!)
     const companyResult = await pool.query(
-      "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE slug = $1",
-      [slug]
+      "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE id = $1",
+      [user_id]
     );
 
     if (!companyResult.rows[0]) {
@@ -166,10 +159,10 @@ router.get("/:slug", async (req, res) => {
 
     const company = companyResult.rows[0];
 
-    // Buscar itens da empresa - NOMES EM INGLÊS
+    // Buscar itens da empresa
     const itemsResult = await pool.query(
       "SELECT id, name, category, price_per_day, unit, stock_total, photo FROM catalog_items WHERE user_id = $1 ORDER BY category, name",
-      [company.id]
+      [user_id]
     );
 
     res.json({
