@@ -7,7 +7,7 @@ const router = express.Router();
 router.get("/", verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT company_name, logo, phone, email, city, state, address, plan, plan_expires_at, suspended, created_at, slug FROM users WHERE id = $1",
+      "SELECT company_name, logo, phone, email, city, state, address, plan, plan_expires_at, suspended, created_at, slug, buffer_days FROM users WHERE id = $1",
       [req.userId]
     );
     const row = result.rows[0] || {};
@@ -20,6 +20,7 @@ router.get("/", verifyToken, async (req, res) => {
       state: row.state,
       address: row.address,
       slug: row.slug,
+      buffer_days: row.buffer_days || 0,
       user: {
         plan: row.plan,
         plan_expires_at: row.plan_expires_at,
@@ -41,7 +42,7 @@ router.put("/", verifyToken, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── PUT /company/slug — atualizar slug ──
+// ──── PUT /company/slug – atualizar slug ────
 router.put("/slug", verifyToken, async (req, res) => {
   try {
     const { slug } = req.body;
@@ -74,7 +75,7 @@ router.put("/password", verifyToken, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── GET /api/company/buffer — obter buffer_days ──
+// ──── GET /api/company/buffer – obter buffer_days ────
 router.get("/buffer", verifyToken, async (req, res) => {
   try {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS buffer_days INTEGER DEFAULT 0`);
@@ -84,12 +85,12 @@ router.get("/buffer", verifyToken, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── PUT /api/company/buffer — salvar buffer_days ──
+// ──── PUT /api/company/buffer – salvar buffer_days ────
 router.put("/buffer", verifyToken, async (req, res) => {
   try {
     const buf = parseInt(req.body.buffer_days);
     if (isNaN(buf) || buf < 0 || buf > 2) return res.status(400).json({ error: "buffer_days deve ser entre 0 e 2" });
-    
+
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS buffer_days INTEGER DEFAULT 0`);
     const result = await pool.query("UPDATE users SET buffer_days = $1 WHERE id = $2 RETURNING buffer_days", [buf, req.userId]);
     if (!result.rows.length) return res.status(404).json({ error: "Usuário não encontrado" });
