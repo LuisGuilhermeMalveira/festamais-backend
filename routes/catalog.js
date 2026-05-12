@@ -65,7 +65,7 @@ router.get("/public/:slug", async (req, res) => {
 
     // Buscar empresa pelo slug
     const companyResult = await pool.query(
-      "SELECT id, company_name, logo, whatsapp, phone, email, city, state, address, buffer_days FROM users WHERE company_slug = $1",
+      "SELECT id, company_name, logo, whatsapp, phone, email, city, state, address, buffer_days FROM users WHERE slug = $1",
       [slug]
     );
 
@@ -103,7 +103,7 @@ router.get("/availability/:slug", async (req, res) => {
 
     // 1. Buscar empresa pelo slug
     const companyResult = await pool.query(
-      "SELECT id, buffer_days FROM users WHERE company_slug = $1",
+      "SELECT id, buffer_days FROM users WHERE slug = $1",
       [slug]
     );
 
