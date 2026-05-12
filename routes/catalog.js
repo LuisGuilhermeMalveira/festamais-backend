@@ -58,68 +58,28 @@ router.delete("/:id", verifyToken, async (req, res) => {
 
 // ===== ROTAS PÚBLICAS (sem autenticação) =====
 
-// GET - Disponibilidade por data para o catálogo público
-router.get("/availability/:user_id", async (req, res) => {
+// GET - Catálogo público por slug OU user_id (compatível com ambos!)
+router.get("/public/:identifier", async (req, res) => {
   try {
-    const { user_id } = req.params;
-    const { date } = req.query;
-
-    if (!date) {
-      return res.status(400).json({ error: "Data é obrigatória" });
+    const { identifier } = req.params;
+    
+    // Verificar se é número (user_id) ou texto (slug)
+    const isNumeric = /^\d+$/.test(identifier);
+    
+    let companyResult;
+    if (isNumeric) {
+      // Se é número, buscar por user_id
+      companyResult = await pool.query(
+        "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE id = $1",
+        [identifier]
+      );
+    } else {
+      // Se é texto, buscar por slug
+      companyResult = await pool.query(
+        "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE slug = $1",
+        [identifier]
+      );
     }
-
-    // 1. Buscar empresa pelo user_id
-    const companyResult = await pool.query(
-      "SELECT id, buffer_days FROM users WHERE id = $1",
-      [user_id]
-    );
-
-    if (!companyResult.rows[0]) {
-      return res.status(404).json({ error: "Empresa não encontrada" });
-    }
-
-    const company = companyResult.rows[0];
-    const bufferDays = company.buffer_days || 0;
-
-    // 2. Buscar todos os itens da empresa
-    const itemsResult = await pool.query(
-      "SELECT id, name, stock_total FROM catalog_items WHERE user_id = $1",
-      [user_id]
-    );
-
-    // 3. Calcular disponibilidade para cada item na data solicitada
-    const availability = {};
-
-    itemsResult.rows.forEach(item => {
-      // Placeholder: disponível = stock_total (sem bloqueios implementados ainda)
-      availability[item.id] = {
-        stock_total: item.stock_total,
-        disponivel: item.stock_total
-      };
-    });
-
-    res.json({
-      date: date,
-      buffer_days: bufferDays,
-      availability: availability
-    });
-
-  } catch (err) {
-    console.error("Erro em /availability:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET - Catálogo público por user_id (IMUTÁVEL - nunca muda mesmo se empresa mudar nome)
-router.get("/public/:user_id", async (req, res) => {
-  try {
-    const { user_id } = req.params;
-
-    // Buscar empresa pelo user_id (não pelo slug - mais seguro!)
-    const companyResult = await pool.query(
-      "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE id = $1",
-      [user_id]
-    );
 
     if (!companyResult.rows[0]) {
       return res.status(404).json({ error: "Empresa não encontrada" });
@@ -130,7 +90,7 @@ router.get("/public/:user_id", async (req, res) => {
     // Buscar itens da empresa
     const itemsResult = await pool.query(
       "SELECT id, name, category, price_per_day, unit, stock_total, photo FROM catalog_items WHERE user_id = $1 ORDER BY category, name",
-      [user_id]
+      [company.id]
     );
 
     res.json({
@@ -142,16 +102,28 @@ router.get("/public/:user_id", async (req, res) => {
   }
 });
 
-// GET - Catálogo público por user_id (rota genérica - NUNCA MUDA!)
-router.get("/:user_id", async (req, res) => {
+// GET - Catálogo público genérico (rota genérica/:identifier - APÓS /public/:identifier e /availability/:identifier)
+router.get("/:identifier", async (req, res) => {
   try {
-    const { user_id } = req.params;
-
-    // Buscar empresa pelo user_id (imutável!)
-    const companyResult = await pool.query(
-      "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE id = $1",
-      [user_id]
-    );
+    const { identifier } = req.params;
+    
+    // Verificar se é número (user_id) ou texto (slug)
+    const isNumeric = /^\d+$/.test(identifier);
+    
+    let companyResult;
+    if (isNumeric) {
+      // Se é número, buscar por user_id
+      companyResult = await pool.query(
+        "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE id = $1",
+        [identifier]
+      );
+    } else {
+      // Se é texto, buscar por slug
+      companyResult = await pool.query(
+        "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE slug = $1",
+        [identifier]
+      );
+    }
 
     if (!companyResult.rows[0]) {
       return res.status(404).json({ error: "Empresa não encontrada" });
@@ -162,7 +134,7 @@ router.get("/:user_id", async (req, res) => {
     // Buscar itens da empresa
     const itemsResult = await pool.query(
       "SELECT id, name, category, price_per_day, unit, stock_total, photo FROM catalog_items WHERE user_id = $1 ORDER BY category, name",
-      [user_id]
+      [company.id]
     );
 
     res.json({
