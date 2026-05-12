@@ -58,38 +58,6 @@ router.delete("/:id", verifyToken, async (req, res) => {
 
 // ===== ROTAS PÚBLICAS (sem autenticação) =====
 
-// GET - Catálogo público por slug da empresa
-router.get("/public/:slug", async (req, res) => {
-  try {
-    const { slug } = req.params;
-
-    // Buscar empresa pelo slug
-    const companyResult = await pool.query(
-      "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE slug = $1",
-      [slug]
-    );
-
-    if (!companyResult.rows[0]) {
-      return res.status(404).json({ error: "Empresa não encontrada" });
-    }
-
-    const company = companyResult.rows[0];
-
-    // Buscar itens da empresa
-    const itemsResult = await pool.query(
-      "SELECT id, nome, descricao, preco, unidade, stock_total, categoria, imagem FROM catalog_items WHERE user_id = $1 ORDER BY categoria, nome",
-      [company.id]
-    );
-
-    res.json({
-      company: company,
-      items: itemsResult.rows
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // GET - Disponibilidade por data para o catálogo público
 // Chamada: GET /api/catalog/availability/:slug?date=2024-06-15
 router.get("/availability/:slug", async (req, res) => {
@@ -145,6 +113,70 @@ router.get("/availability/:slug", async (req, res) => {
 
   } catch (err) {
     console.error("Erro em /availability:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET - Catálogo público por slug da empresa (rota /public/:slug)
+router.get("/public/:slug", async (req, res) => {
+  try {
+    const { slug } = req.params;
+
+    // Buscar empresa pelo slug
+    const companyResult = await pool.query(
+      "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE slug = $1",
+      [slug]
+    );
+
+    if (!companyResult.rows[0]) {
+      return res.status(404).json({ error: "Empresa não encontrada" });
+    }
+
+    const company = companyResult.rows[0];
+
+    // Buscar itens da empresa
+    const itemsResult = await pool.query(
+      "SELECT id, nome, descricao, preco, unidade, stock_total, categoria, imagem FROM catalog_items WHERE user_id = $1 ORDER BY categoria, nome",
+      [company.id]
+    );
+
+    res.json({
+      company: company,
+      items: itemsResult.rows
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET - Catálogo público por slug (rota genérica /:slug - APÓS /public/:slug e /availability/:slug)
+router.get("/:slug", async (req, res) => {
+  try {
+    const { slug } = req.params;
+
+    // Buscar empresa pelo slug
+    const companyResult = await pool.query(
+      "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE slug = $1",
+      [slug]
+    );
+
+    if (!companyResult.rows[0]) {
+      return res.status(404).json({ error: "Empresa não encontrada" });
+    }
+
+    const company = companyResult.rows[0];
+
+    // Buscar itens da empresa
+    const itemsResult = await pool.query(
+      "SELECT id, nome, descricao, preco, unidade, stock_total, categoria, imagem FROM catalog_items WHERE user_id = $1 ORDER BY categoria, nome",
+      [company.id]
+    );
+
+    res.json({
+      company: company,
+      items: itemsResult.rows
+    });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
