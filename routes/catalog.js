@@ -9,7 +9,7 @@ const router = express.Router();
 router.get("/", verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT id, nome, descricao, preco, unidade, stock_total, categoria, imagem FROM catalog_items WHERE user_id = $1 ORDER BY categoria, nome",
+      "SELECT id, name, category, price_per_day, unit, stock_total, photo FROM catalog_items WHERE user_id = $1 ORDER BY category, name",
       [req.userId]
     );
     res.json(result.rows);
@@ -21,10 +21,10 @@ router.get("/", verifyToken, async (req, res) => {
 // POST - Criar novo item no catálogo
 router.post("/", verifyToken, async (req, res) => {
   try {
-    const { nome, descricao, preco, unidade, stock_total, categoria, imagem } = req.body;
+    const { name, category, price_per_day, unit, stock_total, photo } = req.body;
     const result = await pool.query(
-      "INSERT INTO catalog_items (user_id, nome, descricao, preco, unidade, stock_total, categoria, imagem) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
-      [req.userId, nome, descricao, preco, unidade, stock_total, categoria, imagem]
+      "INSERT INTO catalog_items (user_id, name, category, price_per_day, unit, stock_total, photo) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
+      [req.userId, name, category, price_per_day, unit, stock_total, photo]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -35,10 +35,10 @@ router.post("/", verifyToken, async (req, res) => {
 // PATCH - Atualizar item do catálogo
 router.patch("/:id", verifyToken, async (req, res) => {
   try {
-    const { nome, descricao, preco, unidade, stock_total, categoria, imagem } = req.body;
+    const { name, category, price_per_day, unit, stock_total, photo } = req.body;
     const result = await pool.query(
-      "UPDATE catalog_items SET nome = $1, descricao = $2, preco = $3, unidade = $4, stock_total = $5, categoria = $6, imagem = $7 WHERE id = $8 AND user_id = $9 RETURNING *",
-      [nome, descricao, preco, unidade, stock_total, categoria, imagem, req.params.id, req.userId]
+      "UPDATE catalog_items SET name = $1, category = $2, price_per_day = $3, unit = $4, stock_total = $5, photo = $6 WHERE id = $7 AND user_id = $8 RETURNING *",
+      [name, category, price_per_day, unit, stock_total, photo, req.params.id, req.userId]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -134,9 +134,9 @@ router.get("/public/:slug", async (req, res) => {
 
     const company = companyResult.rows[0];
 
-    // Buscar itens da empresa - NOMES EM PORTUGUÊS
+    // Buscar itens da empresa - NOMES EM INGLÊS
     const itemsResult = await pool.query(
-      "SELECT id, nome, descricao, preco, unidade, stock_total, categoria, imagem FROM catalog_items WHERE user_id = $1 ORDER BY categoria, nome",
+      "SELECT id, name, category, price_per_day, unit, stock_total, photo FROM catalog_items WHERE user_id = $1 ORDER BY category, name",
       [company.id]
     );
 
@@ -166,9 +166,9 @@ router.get("/:slug", async (req, res) => {
 
     const company = companyResult.rows[0];
 
-    // Buscar itens da empresa - NOMES EM PORTUGUÊS
+    // Buscar itens da empresa - NOMES EM INGLÊS
     const itemsResult = await pool.query(
-      "SELECT id, nome, descricao, preco, unidade, stock_total, categoria, imagem FROM catalog_items WHERE user_id = $1 ORDER BY categoria, nome",
+      "SELECT id, name, category, price_per_day, unit, stock_total, photo FROM catalog_items WHERE user_id = $1 ORDER BY category, name",
       [company.id]
     );
 
