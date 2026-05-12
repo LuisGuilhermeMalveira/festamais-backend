@@ -19,7 +19,7 @@ router.get("/", verifyToken, async (req, res) => {
       city: row.city,
       state: row.state,
       address: row.address,
-      slug: row.slug,`n      buffer_days: row.buffer_days || 0,
+      slug: row.slug,
       buffer_days: row.buffer_days || 0,
       user: {
         plan: row.plan,
@@ -42,7 +42,7 @@ router.put("/", verifyToken, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ──── PUT /company/slug – atualizar slug ────
+// PUT /company/slug – atualizar slug
 router.put("/slug", verifyToken, async (req, res) => {
   try {
     const { slug } = req.body;
@@ -75,7 +75,7 @@ router.put("/password", verifyToken, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ──── GET /api/company/buffer – obter buffer_days ────
+// GET /api/company/buffer – obter buffer_days
 router.get("/buffer", verifyToken, async (req, res) => {
   try {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS buffer_days INTEGER DEFAULT 0`);
@@ -85,7 +85,7 @@ router.get("/buffer", verifyToken, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ──── PUT /api/company/buffer – salvar buffer_days ────
+// PUT /api/company/buffer – salvar buffer_days
 router.put("/buffer", verifyToken, async (req, res) => {
   try {
     const buf = parseInt(req.body.buffer_days);
@@ -99,4 +99,3 @@ router.put("/buffer", verifyToken, async (req, res) => {
 });
 
 module.exports = router;
-
