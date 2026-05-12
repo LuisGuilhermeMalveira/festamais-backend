@@ -134,9 +134,9 @@ router.get("/public/:slug", async (req, res) => {
 
     const company = companyResult.rows[0];
 
-    // Buscar itens da empresa
+    // Buscar itens da empresa - CORRIGIDO PARA NOMES DE COLUNAS EM INGLÊS
     const itemsResult = await pool.query(
-      "SELECT id, nome, descricao, preco, unidade, stock_total, categoria, imagem FROM catalog_items WHERE user_id = $1 ORDER BY categoria, nome",
+      "SELECT id, name, description, price_per_day, unit, stock_total, category, photo FROM catalog_items WHERE user_id = $1 ORDER BY category, name",
       [company.id]
     );
 
@@ -166,9 +166,9 @@ router.get("/:slug", async (req, res) => {
 
     const company = companyResult.rows[0];
 
-    // Buscar itens da empresa
+    // Buscar itens da empresa - CORRIGIDO PARA NOMES DE COLUNAS EM INGLÊS
     const itemsResult = await pool.query(
-      "SELECT id, nome, descricao, preco, unidade, stock_total, categoria, imagem FROM catalog_items WHERE user_id = $1 ORDER BY categoria, nome",
+      "SELECT id, name, description, price_per_day, unit, stock_total, category, photo FROM catalog_items WHERE user_id = $1 ORDER BY category, name",
       [company.id]
     );
 
