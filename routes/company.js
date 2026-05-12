@@ -19,7 +19,7 @@ router.get("/", verifyToken, async (req, res) => {
       city: row.city,
       state: row.state,
       address: row.address,
-      slug: row.slug,
+      slug: row.slug,`n      buffer_days: row.buffer_days || 0,
       buffer_days: row.buffer_days || 0,
       user: {
         plan: row.plan,
@@ -99,3 +99,4 @@ router.put("/buffer", verifyToken, async (req, res) => {
 });
 
 module.exports = router;
+
