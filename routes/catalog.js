@@ -58,28 +58,18 @@ router.delete("/:id", verifyToken, async (req, res) => {
 
 // ===== ROTAS PÚBLICAS (sem autenticação) =====
 
-// GET - Catálogo público por slug OU user_id (compatível com ambos!)
+// GET - Catálogo público por slug OU user_id
 router.get("/public/:identifier", async (req, res) => {
   try {
     const { identifier } = req.params;
-    
-    // Verificar se é número (user_id) ou texto (slug)
     const isNumeric = /^\d+$/.test(identifier);
-    
-    let companyResult;
-    if (isNumeric) {
-      // Se é número, buscar por user_id
-      companyResult = await pool.query(
-        "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE id = $1",
-        [identifier]
-      );
-    } else {
-      // Se é texto, buscar por slug
-      companyResult = await pool.query(
-        "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE slug = $1",
-        [identifier]
-      );
-    }
+
+    const companyResult = await pool.query(
+      isNumeric
+        ? "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE id = $1"
+        : "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE slug = $1",
+      [identifier]
+    );
 
     if (!companyResult.rows[0]) {
       return res.status(404).json({ error: "Empresa não encontrada" });
@@ -87,43 +77,121 @@ router.get("/public/:identifier", async (req, res) => {
 
     const company = companyResult.rows[0];
 
-    // Buscar itens da empresa
     const itemsResult = await pool.query(
       "SELECT id, name, category, price_per_day, unit, stock_total, photo FROM catalog_items WHERE user_id = $1 ORDER BY category, name",
       [company.id]
     );
 
-    res.json({
-      company: company,
-      items: itemsResult.rows
-    });
+    res.json({ company, items: itemsResult.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET - Catálogo público genérico (rota genérica/:identifier - APÓS /public/:identifier e /availability/:identifier)
+// GET - Disponibilidade de estoque por data (slug ou user_id + ?date=YYYY-MM-DD)
+// ⚠️ DEVE vir antes de /:identifier para não ser engolida pelo catch-all
+router.get("/availability/:identifier", async (req, res) => {
+  try {
+    const { identifier } = req.params;
+    const { date } = req.query;
+
+    if (!date) {
+      return res.status(400).json({ error: "Parâmetro 'date' obrigatório (YYYY-MM-DD)" });
+    }
+
+    // Validar formato da data
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: "Formato de data inválido. Use YYYY-MM-DD" });
+    }
+
+    const isNumeric = /^\d+$/.test(identifier);
+
+    // Buscar empresa
+    const companyResult = await pool.query(
+      isNumeric
+        ? "SELECT id, buffer_days FROM users WHERE id = $1"
+        : "SELECT id, buffer_days FROM users WHERE slug = $1",
+      [identifier]
+    );
+
+    if (!companyResult.rows[0]) {
+      return res.status(404).json({ error: "Empresa não encontrada" });
+    }
+
+    const company = companyResult.rows[0];
+    const userId = company.id;
+    const bufferDays = company.buffer_days || 0;
+
+    // Buscar itens do catálogo
+    const itemsResult = await pool.query(
+      "SELECT id, name, category, price_per_day, unit, stock_total, photo FROM catalog_items WHERE user_id = $1 ORDER BY category, name",
+      [userId]
+    );
+
+    if (!itemsResult.rows.length) {
+      return res.json({ availability: [] });
+    }
+
+    // Calcular itens comprometidos em eventos confirmados que conflitam com a data
+    // Conflito: a data do evento solicitado cai dentro do período bloqueado pelo evento existente
+    // Período bloqueado = [event_date - buffer_days, event_date + buffer_days]
+    const committedResult = await pool.query(
+      `SELECT
+         (elem->>'id') AS item_id,
+         SUM((elem->>'qty')::int) AS committed_qty
+       FROM events e,
+            jsonb_array_elements(e.items) AS elem
+       WHERE e.user_id = $1
+         AND e.status = 'Confirmado'
+         AND $2::date BETWEEN
+               DATE(e.event_date) - ($3 || ' days')::interval
+               AND
+               DATE(e.event_date) + ($3 || ' days')::interval
+       GROUP BY elem->>'id'`,
+      [userId, date, bufferDays]
+    );
+
+    // Montar mapa de comprometidos: { item_id: qty }
+    const committed = {};
+    for (const row of committedResult.rows) {
+      committed[String(row.item_id)] = parseInt(row.committed_qty) || 0;
+    }
+
+    // Calcular disponibilidade por item
+    const availability = itemsResult.rows.map((item) => {
+      const usedQty = committed[String(item.id)] || 0;
+      const available = Math.max(0, item.stock_total - usedQty);
+      return {
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        price_per_day: item.price_per_day,
+        unit: item.unit,
+        stock_total: item.stock_total,
+        photo: item.photo,
+        available_qty: available,
+      };
+    });
+
+    res.json({ date, availability });
+  } catch (err) {
+    console.error("Availability error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET - Catálogo público genérico catch-all (SEMPRE por último!)
 router.get("/:identifier", async (req, res) => {
   try {
     const { identifier } = req.params;
-    
-    // Verificar se é número (user_id) ou texto (slug)
     const isNumeric = /^\d+$/.test(identifier);
-    
-    let companyResult;
-    if (isNumeric) {
-      // Se é número, buscar por user_id
-      companyResult = await pool.query(
-        "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE id = $1",
-        [identifier]
-      );
-    } else {
-      // Se é texto, buscar por slug
-      companyResult = await pool.query(
-        "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE slug = $1",
-        [identifier]
-      );
-    }
+
+    const companyResult = await pool.query(
+      isNumeric
+        ? "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE id = $1"
+        : "SELECT id, company_name, logo, phone, email, city, state, address, buffer_days FROM users WHERE slug = $1",
+      [identifier]
+    );
 
     if (!companyResult.rows[0]) {
       return res.status(404).json({ error: "Empresa não encontrada" });
@@ -131,16 +199,12 @@ router.get("/:identifier", async (req, res) => {
 
     const company = companyResult.rows[0];
 
-    // Buscar itens da empresa
     const itemsResult = await pool.query(
       "SELECT id, name, category, price_per_day, unit, stock_total, photo FROM catalog_items WHERE user_id = $1 ORDER BY category, name",
       [company.id]
     );
 
-    res.json({
-      company: company,
-      items: itemsResult.rows
-    });
+    res.json({ company, items: itemsResult.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
