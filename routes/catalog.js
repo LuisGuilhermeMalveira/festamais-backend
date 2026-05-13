@@ -161,17 +161,13 @@ router.get("/availability/:identifier", async (req, res) => {
 
     // Calcular disponibilidade por item
     const availability = itemsResult.rows.map((item) => {
-      const usedQty = committed[String(item.id)] || 0;
-      const available = Math.max(0, item.stock_total - usedQty);
+      const comprometido = committed[String(item.id)] || 0;
+      const disponivel = Math.max(0, item.stock_total - comprometido);
       return {
         id: item.id,
-        name: item.name,
-        category: item.category,
-        price_per_day: item.price_per_day,
-        unit: item.unit,
         stock_total: item.stock_total,
-        photo: item.photo,
-        available_qty: available,
+        comprometido,
+        disponivel,
       };
     });
 
