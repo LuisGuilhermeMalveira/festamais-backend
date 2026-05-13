@@ -138,15 +138,17 @@ router.get("/availability/:identifier", async (req, res) => {
     const committedResult = await pool.query(
       `SELECT
          (elem->>'id') AS item_id,
-         SUM((elem->>'qty')::int) AS committed_qty
-       FROM events e,
-            jsonb_array_elements(e.items) AS elem
-       WHERE e.user_id = $1
-         AND e.status = 'Confirmado'
+         SUM(COALESCE((elem->>'qty')::int, 1)) AS committed_qty
+       FROM quotations q,
+            jsonb_array_elements(q.items) AS elem
+       WHERE q.user_id = $1
+         AND q.status = 'Confirmado'
+         AND q.items IS NOT NULL
+         AND jsonb_typeof(q.items) = 'array'
          AND $2::date BETWEEN
-               DATE(e.event_date) - ($3 || ' days')::interval
+               DATE(q.event_date) - ($3::int * INTERVAL '1 day')
                AND
-               DATE(e.event_date) + ($3 || ' days')::interval
+               DATE(q.event_date) + ($3::int * INTERVAL '1 day')
        GROUP BY elem->>'id'`,
       [userId, date, bufferDays]
     );
