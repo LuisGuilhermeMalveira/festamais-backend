@@ -48,58 +48,23 @@ router.delete("/:id", verifyToken, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ===== CONFIRMAR ORÇAMENTO E BLOQUEAR ESTOQUE =====
+// ===== CONFIRMAR ORÇAMENTO =====
 router.post("/confirm", verifyToken, async (req, res) => {
-  const client = await pool.connect();
   try {
-    await client.query("BEGIN");
+    const { quotation_id } = req.body;
 
-    const { quotation_id, client_name, event_date, items, total, buffer_days } = req.body;
-
-    // 1. Atualizar quotation para status = 'Confirmado'
-    const quotationResult = await client.query(
-      "UPDATE quotations SET status = $1 WHERE id = $2 AND user_id = $3 RETURNING *",
-      ["Confirmado", quotation_id, req.userId]
+    const result = await pool.query(
+      "UPDATE quotations SET status = 'Confirmado' WHERE id = $1 AND user_id = $2 RETURNING *",
+      [quotation_id, req.userId]
     );
 
-    if (quotationResult.rows.length === 0) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ error: "Quotation not found" });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Orçamento não encontrado" });
     }
 
-    // 2. Tentar criar evento — usa SAVEPOINT para não abortar a transação se falhar
-    let eventId = null;
-    try {
-      await client.query("SAVEPOINT before_event");
-      const eventResult = await client.query(
-        "INSERT INTO events (user_id, client_name, event_date, items, value, status, buffer_days, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) RETURNING id",
-        [req.userId, client_name, event_date, JSON.stringify(items), total, "Confirmado", buffer_days || 0]
-      );
-      eventId = eventResult.rows[0]?.id;
-      await client.query("RELEASE SAVEPOINT before_event");
-    } catch (e) {
-      // Tabela events com estrutura diferente — não aborta a transação principal
-      await client.query("ROLLBACK TO SAVEPOINT before_event");
-      console.log("Insert evento ignorado:", e.message);
-    }
-
-    // 3. Estoque é controlado pela tabela quotations (status = 'Confirmado')
-    // Não depende de tabela inventory separada
-
-    await client.query("COMMIT");
-
-    res.json({
-      success: true,
-      quotation: quotationResult.rows[0],
-      event_id: eventId,
-      message: "Quotation confirmed and stock blocked"
-    });
-
+    res.json({ success: true, quotation: result.rows[0] });
   } catch (err) {
-    await client.query("ROLLBACK");
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
   }
 });
 
