@@ -108,7 +108,7 @@ router.get('/stats', adminAuth, async (req, res) => {
 router.put('/users/:id', adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { plan, plan_expires_at, suspended } = req.body;
+    const { plan, plan_expires_at, suspended, buffer_days } = req.body;
 
     const fields = [];
     const values = [];
@@ -117,6 +117,7 @@ router.put('/users/:id', adminAuth, async (req, res) => {
     if (plan !== undefined) { fields.push(`plan = $${idx++}`); values.push(plan); }
     if (plan_expires_at !== undefined) { fields.push(`plan_expires_at = $${idx++}`); values.push(plan_expires_at); }
     if (suspended !== undefined) { fields.push(`suspended = $${idx++}`); values.push(suspended); }
+    if (buffer_days !== undefined) { fields.push(`buffer_days = $${idx++}`); values.push(parseInt(buffer_days) || 0); }
 
     if (!fields.length) return res.status(400).json({ error: 'Nada para atualizar' });
 
