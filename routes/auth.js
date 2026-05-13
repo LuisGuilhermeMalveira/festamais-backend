@@ -1,10 +1,10 @@
-const express = require("express");
+﻿const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const pool = require("../config/database");
 const router = express.Router();
 
-// Gera slug único a partir do nome
+// Gera slug Ãºnico a partir do nome
 function toSlug(str) {
   return (str || '')
     .toLowerCase()
@@ -40,8 +40,8 @@ router.post("/register", async (req, res) => {
     const slug = await gerarSlugUnico(company_name || 'minha-empresa');
 
     const result = await pool.query(
-      `INSERT INTO users (email, password, company_name, plan, plan_expires_at, slug)
-       VALUES ($1, $2, $3, 'trial', NOW() + INTERVAL '7 days', $4)
+      `INSERT INTO users (email, password, company_name, plan, plan_expires_at, slug, buffer_days)
+       VALUES ($1, $2, $3, 'trial', NOW() + INTERVAL '7 days', $4, 0)
        RETURNING id, email, company_name, plan, plan_expires_at, slug`,
       [email, hash, company_name || "Minha Empresa", slug]
     );
@@ -65,7 +65,7 @@ router.post("/login", async (req, res) => {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(401).json({ error: "Email ou senha incorretos" });
 
-    // Se não tem slug, gera um agora
+    // Se nÃ£o tem slug, gera um agora
     if (!user.slug) {
       const slug = await gerarSlugUnico(user.company_name || 'empresa');
       await pool.query('UPDATE users SET slug = $1 WHERE id = $2', [slug, user.id]);
@@ -89,3 +89,4 @@ router.post("/login", async (req, res) => {
 });
 
 module.exports = router;
+
