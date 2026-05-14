@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const pool = require("../config/database");
 const { verifyToken } = require("../middleware/auth");
 const router = express.Router();
@@ -18,6 +18,18 @@ router.post("/", verifyToken, async (req, res) => {
       [req.userId, name, phone||"", email||"", address||""]
     );
     res.status(201).json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put("/:id", verifyToken, async (req, res) => {
+  try {
+    const { name, phone, email, address } = req.body;
+    const result = await pool.query(
+      "UPDATE clients SET name=$1, phone=$2, email=$3, address=$4 WHERE id=$5 AND user_id=$6 RETURNING *",
+      [name, phone||"", email||"", address||"", req.params.id, req.userId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Cliente não encontrado" });
+    res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
